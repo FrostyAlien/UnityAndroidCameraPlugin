@@ -79,19 +79,19 @@ class YUV420_888_Camera(
         // Set texture filtering and wrapping parameters
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER,
             GLES20.GL_LINEAR.toFloat()
-        );
+        )
         // Set magnification filter to GL_LINEAR
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER,
             GLES20.GL_LINEAR.toFloat()
-        );
+        )
         // Set texture wrap mode for S coordinate to GL_CLAMP_TO_EDGE
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S,
             GLES20.GL_CLAMP_TO_EDGE.toFloat()
-        );
+        )
         // Set texture wrap mode for T coordinate to GL_CLAMP_TO_EDGE
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T,
             GLES20.GL_CLAMP_TO_EDGE.toFloat()
-        );
+        )
 
         // Create a SurfaceTexture with the texture id
         surfaceTexture = SurfaceTexture(externalTextureId[0]).apply {
