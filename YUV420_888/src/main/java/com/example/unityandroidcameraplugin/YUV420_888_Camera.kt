@@ -39,7 +39,7 @@ class YUV420_888_Camera(
     private val cameraStateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
             cameraDevice = camera
-            createExternalTexture()
+            prepareExternalTexture()
         }
 
         override fun onDisconnected(camera: CameraDevice) {
@@ -69,10 +69,10 @@ class YUV420_888_Camera(
     }
 
     /**
-     * Create an external texture for rendering the camera preview.
+     * Prepare an external texture for rendering the camera preview.
      * This method generates a texture ID, sets texture parameters, and creates a [SurfaceTexture].
      */
-    private fun createExternalTexture() {
+    private fun prepareExternalTexture() {
         val externalTextureId = IntArray(1)
         GLES20.glGenTextures(externalTextureId.size, externalTextureId, 0) // generate only 1 texture
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, externalTextureId[0]) // bind the texture
@@ -160,7 +160,7 @@ class YUV420_888_Camera(
             return
         }
         try {
-            createExternalTexture()
+            prepareExternalTexture()
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize SurfaceTexture: $e")

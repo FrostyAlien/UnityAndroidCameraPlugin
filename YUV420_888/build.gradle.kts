@@ -1,5 +1,6 @@
 plugins {
-    alias(libs.plugins.androidApplication)
+//    alias(libs.plugins.androidApplication)
+    id ("com.android.library")
     alias(libs.plugins.jetbrainsKotlinAndroid)
 }
 
@@ -8,11 +9,8 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.unityandroidcameraplugin"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
