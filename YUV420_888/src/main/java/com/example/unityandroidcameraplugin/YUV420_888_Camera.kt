@@ -3,7 +3,6 @@ package com.example.unityandroidcameraplugin
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
-import android.graphics.SurfaceTexture
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraDevice
@@ -13,11 +12,7 @@ import android.hardware.camera2.params.OutputConfiguration
 import android.hardware.camera2.params.SessionConfiguration
 import android.media.Image
 import android.media.ImageReader
-import android.opengl.GLES11Ext
-import android.opengl.GLES20
 import android.util.Log
-import java.lang.RuntimeException
-import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 
 class YUV420_888_Camera(
@@ -26,7 +21,7 @@ class YUV420_888_Camera(
     private val width: Int,
     private val height: Int,
 ) {
-    private val TAG ="UnityCameraPlugin"
+    private val TAG = "UnityAndroidCamera"
 
     private val cameraManager: CameraManager by lazy {
         context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
@@ -34,12 +29,20 @@ class YUV420_888_Camera(
 
     private var cameraDevice: CameraDevice? = null
     private lateinit var imageReader: ImageReader
-    private lateinit var surfaceTexture: SurfaceTexture
+    private var unityCallback: UnityCallback? = null
+
+    // YUV data buffer
+    private var yBuffer: ByteArray = ByteArray(width * height)
+    private var uvBuffer: ByteArray = ByteArray(width * height / 2)
+
+    fun setUnityCallback(callback: UnityCallback) {
+        unityCallback = callback
+    }
 
     private val cameraStateCallback = object : CameraDevice.StateCallback() {
         override fun onOpened(camera: CameraDevice) {
             cameraDevice = camera
-            prepareExternalTexture()
+            startCameraCapture() // temporary solution to start the camera preview immediately
         }
 
         override fun onDisconnected(camera: CameraDevice) {
@@ -69,120 +72,61 @@ class YUV420_888_Camera(
     }
 
     /**
-     * Prepare an external texture for rendering the camera preview.
-     * This method generates a texture ID, sets texture parameters, and creates a [SurfaceTexture].
-     */
-    private fun prepareExternalTexture() {
-        val externalTextureId = IntArray(1)
-        GLES20.glGenTextures(externalTextureId.size, externalTextureId, 0) // generate only 1 texture
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, externalTextureId[0]) // bind the texture
-        // Set texture filtering and wrapping parameters
-        GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER,
-            GLES20.GL_LINEAR.toFloat()
-        )
-        // Set magnification filter to GL_LINEAR
-        GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER,
-            GLES20.GL_LINEAR.toFloat()
-        )
-        // Set texture wrap mode for S coordinate to GL_CLAMP_TO_EDGE
-        GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S,
-            GLES20.GL_CLAMP_TO_EDGE.toFloat()
-        )
-        // Set texture wrap mode for T coordinate to GL_CLAMP_TO_EDGE
-        GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T,
-            GLES20.GL_CLAMP_TO_EDGE.toFloat()
-        )
-
-        // Create a SurfaceTexture with the texture id
-        surfaceTexture = SurfaceTexture(externalTextureId[0]).apply {
-            setDefaultBufferSize(width, height)
-        }
-    }
-
-    /**
-     * Update the external texture with YUV data from the [Image].
+     * Update all buffers with YUV data from the [Image].
      * This method expects the image format to be [ImageFormat.YUV_420_888].
      *
      * @param image The [Image] object containing the YUV data.
      * @throws IllegalArgumentException if the image format is not [ImageFormat.YUV_420_888].
-     * @throws RuntimeException if failed to update the [SurfaceTexture].
      */
-    private fun updateExternalTextureWithYUVImage(image: Image) {
+    private fun updateBuffer(image: Image) {
         if (image.format != ImageFormat.YUV_420_888) {
             throw IllegalArgumentException("Invalid image format. Expected YUV_420_888, but got ${image.format}")
         }
 
-        val yBuffer = image.planes[0].buffer
-        val uBuffer = image.planes[1].buffer
-        val vBuffer = image.planes[2].buffer
-
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-
-        val yuvData = ByteArray(ySize + uSize + vSize)
+        val yPlane = image.planes[0]
+        val uPlane = image.planes[1]
+        val vPlane = image.planes[2]
 
         // Y plane is first, followed by U and V in interleaved order
         // Also checks https://developer.android.com/reference/android/media/Image.Plane
         // Since some devices may have format such as NV21
-        yBuffer.get(yuvData, 0, ySize)
-        uBuffer.get(yuvData, ySize, uSize)
-        vBuffer.get(yuvData, ySize + uSize, vSize)
+        yPlane.buffer.get(yBuffer, 0, yBuffer.size)
+        uPlane.buffer.get(uvBuffer, 0, uPlane.buffer.remaining())
+        vPlane.buffer.get(uvBuffer, uPlane.buffer.remaining(), vPlane.buffer.remaining())
 
-        val yuvDataBuffer = ByteBuffer.wrap(yuvData)
-
-        try {
-            surfaceTexture.updateTexImage()
-
-            GLES20.glTexImage2D(
-                GLES11Ext.GL_TEXTURE_EXTERNAL_OES,
-                0,
-                GLES20.GL_LUMINANCE,
-                image.width,
-                image.height,
-                0,
-                GLES20.GL_LUMINANCE,
-                GLES20.GL_UNSIGNED_BYTE,
-                yuvDataBuffer
-            )
-        } catch (e: Exception) {
-            throw RuntimeException("Failed to update SurfaceTexture: $e")
-        }
+        // Notify Unity that the camera texture has been updated
+        unityCallback?.onCameraTextureUpdated()
     }
 
     /**
-     * Start the camera capture session and send the preview on the external texture.
-     * This method creates the external texture, sets up the [ImageReader], and starts the camera capture session.
+     * Start the camera capture session.
+     * This method sets up the [ImageReader], and starts the camera capture session.
+     * The YUV_420_888 image data is extracted and stored in the [yBuffer] and [uvBuffer].
+     * Finally, it notifies Unity that the camera texture has been updated via the [UnityCallback].
      */
     fun startCameraCapture() {
         if (cameraDevice == null) {
             Log.e(TAG, "Camera is not opened, cannot start preview")
             return
         }
-        try {
-            prepareExternalTexture()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize SurfaceTexture: $e")
-        }
 
         // prepare image reader
         imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
             .apply {
-            setOnImageAvailableListener({ reader ->
-                var image: Image? = null
-                try {
-                    image = reader.acquireLatestImage()
-                    if (image != null) {
-                        updateExternalTextureWithYUVImage(image)
+                setOnImageAvailableListener({ reader ->
+                    var image: Image? = null
+                    try {
+                        image = reader.acquireLatestImage()
+                        if (image != null) {
+                            updateBuffer(image)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "ImageReader Error: $e")
+                    } finally {
+                        image?.close()
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "ImageReader Error: $e")
-                } finally {
-                    image?.close()
-                }
-            }, null)
-        }
+                }, null)
+            }
 
         val captureRequestBuilder = createCaptureRequest()
 
@@ -203,7 +147,10 @@ class YUV420_888_Camera(
         return cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)?.apply {
             addTarget(imageReader.surface)
             set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-            set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
+            set(
+                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
+                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON
+            )
         }
     }
 
@@ -234,19 +181,17 @@ class YUV420_888_Camera(
         try {
             cameraDevice?.close()
             imageReader.close()
-            surfaceTexture.release()
         } catch (e: Exception) {
             Log.e(TAG, "Error while stopping preview: $e")
         }
     }
 
-    /**
-     * Get the [SurfaceTexture] used for the camera preview.
-     *
-     * @return The [SurfaceTexture] instance.
-     */
-    fun getExternalTexture(): SurfaceTexture {
-        return surfaceTexture
+    fun getYBuffer(): ByteArray {
+        return yBuffer
+    }
+
+    fun getUVBuffer(): ByteArray {
+        return uvBuffer
     }
 
 }
