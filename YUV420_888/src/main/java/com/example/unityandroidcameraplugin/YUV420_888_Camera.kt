@@ -89,7 +89,7 @@ class YUV420_888_Camera(
 
         // Y plane is first, followed by U and V in interleaved order
         // Also checks https://developer.android.com/reference/android/media/Image.Plane
-        // Since some devices may have format such as NV21
+        // Since some devices may have format such as NV21 or YV12
         yPlane.buffer.get(yBuffer, 0, yBuffer.size)
         uPlane.buffer.get(uvBuffer, 0, uPlane.buffer.remaining())
         vPlane.buffer.get(uvBuffer, uPlane.buffer.remaining(), vPlane.buffer.remaining())
