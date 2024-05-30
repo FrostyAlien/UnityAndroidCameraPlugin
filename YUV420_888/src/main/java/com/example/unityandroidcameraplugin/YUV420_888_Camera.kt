@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.ImageFormat
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
@@ -13,13 +14,16 @@ import android.hardware.camera2.params.SessionConfiguration
 import android.media.Image
 import android.media.ImageReader
 import android.util.Log
+import android.util.Range
 import java.util.concurrent.Executors
+import kotlin.math.abs
 
 class YUV420_888_Camera(
     private val context: Context,
     private val cameraId: String,
     private val width: Int,
     private val height: Int,
+    private var fps: Int = 30 // fixed frame rate
 ) {
     private val TAG = "UnityAndroidCamera"
 
@@ -110,6 +114,44 @@ class YUV420_888_Camera(
             return
         }
 
+        // check the fps is supported
+        val cameraCharacteristics = cameraManager.getCameraCharacteristics(cameraId)
+        val fpsRanges =
+            cameraCharacteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+        if (fpsRanges.isNullOrEmpty()) {
+            Log.e(TAG, "No supported FPS ranges found.")
+            return
+        }
+
+        var isFpsSupported = false
+        for (range in fpsRanges) {
+            if (range.lower >= fps && range.upper <= fps) {
+                isFpsSupported = true
+                break
+            }
+        }
+
+        if (!isFpsSupported) {
+            Log.w(TAG, "FPS $fps is not supported.")
+
+            // find the closest supported fps
+            val closestFpsRange = fpsRanges.minByOrNull { range ->
+                abs(range.lower - fps) + abs(range.upper - fps)
+            }
+
+            if (closestFpsRange != null) {
+                Log.w(
+                    TAG, "Downgraded to the closest supported FPS range: " +
+                            "${closestFpsRange.lower} - ${closestFpsRange.upper}"
+                )
+                fps = closestFpsRange.lower
+            } else {
+                Log.e(TAG, "No supported FPS range found.")
+                return
+            }
+
+        }
+
         // prepare image reader
         imageReader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 2)
             .apply {
@@ -151,6 +193,7 @@ class YUV420_888_Camera(
                 CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
                 CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON
             )
+            set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(fps, fps))
         }
     }
 
