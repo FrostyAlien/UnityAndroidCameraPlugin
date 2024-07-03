@@ -23,7 +23,9 @@ class YUV420_888_Camera(
     private val cameraId: String,
     private val width: Int,
     private val height: Int,
-    private var fps: Int = 30 // fixed frame rate
+    private var fps: Int = 30, // fixed frame rate
+    private var enableAutoFocus: Boolean = true,
+    private var enableVideoStabilization: Boolean = true
 ) {
     private val TAG = "UnityAndroidCamera"
 
@@ -188,11 +190,16 @@ class YUV420_888_Camera(
     private fun createCaptureRequest(): CaptureRequest.Builder? {
         return cameraDevice?.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)?.apply {
             addTarget(imageReader.surface)
-            set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-            set(
-                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
-                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON
-            )
+
+            if (enableAutoFocus) {
+                set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
+            }
+            if (enableVideoStabilization) {
+                set(
+                    CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
+                    CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON
+                )
+            }
             set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(fps, fps))
         }
     }
